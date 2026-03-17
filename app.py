@@ -329,9 +329,7 @@ def call_claude(prompt: str) -> str:
 # ── UI ─────────────────────────────────────────────────────────────────────────
 
 st.title("SF Semantic Analyzer")
-st.caption("Screaming Frog only · Maximum SF signal · Semantic embeddings · Page value · AI migration report")
-
-tab1, tab2, tab3 = st.tabs(["Uniqueness Audit", "Redirect Mapping", "AI Migration Report"])
+st.caption("Screaming Frog only · Maximum SF signal · Semantic embeddings · Page value")
 
 # ── SHARED EXPANDERS ──────────────────────────────────────────────────────────
 
@@ -364,278 +362,118 @@ def expander_inlinks():
 The app aggregates top 8 anchor texts and top 5 source page titles per destination URL and appends them to the composite.
         """)
 
-# ── TAB 1: UNIQUENESS AUDIT ───────────────────────────────────────────────────
+# ── UNIQUENESS AUDIT ──────────────────────────────────────────────────────────
 
-with tab1:
-    st.subheader("Uniqueness Audit")
-    st.markdown("Single site analysis. Scores each page for semantic uniqueness and migration value using SF data only.")
+st.subheader("Uniqueness Audit")
+st.markdown("Single site analysis. Scores each page for semantic uniqueness and migration value using SF data only.")
 
-    expander_sf_columns()
-    expander_inlinks()
+expander_sf_columns()
+expander_inlinks()
 
-    sf_file = st.file_uploader(
-        "Screaming Frog Internal HTML CSV (required)",
-        type="csv", key="sf1"
-    )
-    il_file = st.file_uploader(
-        "SF All Inlinks CSV (optional — strongly recommended)",
-        type="csv", key="il1"
-    )
+sf_file = st.file_uploader(
+    "Screaming Frog Internal HTML CSV (required)",
+    type="csv", key="sf1"
+)
+il_file = st.file_uploader(
+    "SF All Inlinks CSV (optional — strongly recommended)",
+    type="csv", key="il1"
+)
 
-    if sf_file:
-        raw = pd.read_csv(sf_file)
-        df  = filter_df(raw)
+if sf_file:
+    raw = pd.read_csv(sf_file)
+    df  = filter_df(raw)
 
-        c1, c2 = st.columns(2)
-        c1.metric("Total in export", len(raw))
-        c2.metric("After filtering (200 + Indexable)", len(df))
+    c1, c2 = st.columns(2)
+    c1.metric("Total in export", len(raw))
+    c2.metric("After filtering (200 + Indexable)", len(df))
 
-        if len(df) == 0:
-            st.error("No pages remain after filtering. Check Status Code and Indexability columns.")
-            st.stop()
+    if len(df) == 0:
+        st.error("No pages remain after filtering. Check Status Code and Indexability columns.")
+        st.stop()
 
-        sources = ["SF metadata"]
+    sources = ["SF metadata"]
 
-        if il_file:
-            inlinks_df = pd.read_csv(il_file, low_memory=False)
-            df = merge_inlinks(df, inlinks_df)
-            sources.append("SF inlinks (anchor text + source titles)")
+    if il_file:
+        inlinks_df = pd.read_csv(il_file, low_memory=False)
+        df = merge_inlinks(df, inlinks_df)
+        sources.append("SF inlinks (anchor text + source titles)")
 
-        st.info(f"Active sources: {', '.join(sources)}")
+    st.info(f"Active sources: {', '.join(sources)}")
 
-        # Show which SF columns were found
-        found_embed = [c for c in SF_EMBED_COLS if c in df.columns]
-        found_score = [c for c in SF_SCORE_COLS if c in df.columns]
-        found_body  = next((c for c in SF_BODY_COLS if c in df.columns), None)
-        has_anchors = "_anchor_string" in df.columns
+    # Show which SF columns were found
+    found_embed = [c for c in SF_EMBED_COLS if c in df.columns]
+    found_score = [c for c in SF_SCORE_COLS if c in df.columns]
+    found_body  = next((c for c in SF_BODY_COLS if c in df.columns), None)
+    has_anchors = "_anchor_string" in df.columns
 
-        col_info = f"Embedding: {', '.join(found_embed)}"
-        if found_body:   col_info += f", {found_body}"
-        if has_anchors:  col_info += ", anchor texts, source titles"
-        if found_score:  col_info += f" | Scoring: {', '.join(found_score)}"
+    col_info = f"Embedding: {', '.join(found_embed)}"
+    if found_body:   col_info += f", {found_body}"
+    if has_anchors:  col_info += ", anchor texts, source titles"
+    if found_score:  col_info += f" | Scoring: {', '.join(found_score)}"
 
-        st.caption(f"Columns detected — {col_info}")
+    st.caption(f"Columns detected — {col_info}")
 
-        df["Composite Text"] = df.apply(build_composite, axis=1)
+    df["Composite Text"] = df.apply(build_composite, axis=1)
 
-        with st.expander("Preview composite text (first 10 rows)"):
-            st.dataframe(df[["Address", "Composite Text"]].head(10), use_container_width=True)
+    with st.expander("Preview composite text (first 10 rows)"):
+        st.dataframe(df[["Address", "Composite Text"]].head(10), use_container_width=True)
 
-        if st.button("Run Uniqueness Audit", type="primary", key="run1"):
-            embeddings = get_embeddings(model, df["Composite Text"].tolist())
+    if st.button("Run Uniqueness Audit", type="primary", key="run1"):
+        embeddings = get_embeddings(model, df["Composite Text"].tolist())
 
-            with st.spinner("Calculating similarity matrix..."):
-                sim = cosine_similarity(embeddings)
-                np.fill_diagonal(sim, 0)
-                max_sim        = sim.max(axis=1)
-                best_match_idx = sim.argmax(axis=1)
-                uniqueness     = 1 - max_sim
-                page_value     = compute_page_value(df, uniqueness)
+        with st.spinner("Calculating similarity matrix..."):
+            sim = cosine_similarity(embeddings)
+            np.fill_diagonal(sim, 0)
+            max_sim        = sim.max(axis=1)
+            best_match_idx = sim.argmax(axis=1)
+            uniqueness     = 1 - max_sim
+            page_value     = compute_page_value(df, uniqueness)
 
-            result_cols = {
-                "URL":              df["Address"].values,
-                "Title":            df["Title 1"].values if "Title 1" in df.columns else "",
-                "H1":               df["H1-1"].values    if "H1-1"    in df.columns else "",
-                "Composite Text":   df["Composite Text"].values,
-                "Uniqueness Score": uniqueness.round(4),
-                "Max Similarity":   max_sim.round(4),
-                "Most Similar URL": df["Address"].iloc[best_match_idx].values,
-                "Page Value Score": page_value.values,
-                "Recommendation":   [migration_rec(s) for s in max_sim],
-            }
+        result_cols = {
+            "URL":              df["Address"].values,
+            "Title":            df["Title 1"].values if "Title 1" in df.columns else "",
+            "H1":               df["H1-1"].values    if "H1-1"    in df.columns else "",
+            "Composite Text":   df["Composite Text"].values,
+            "Uniqueness Score": uniqueness.round(4),
+            "Max Similarity":   max_sim.round(4),
+            "Most Similar URL": df["Address"].iloc[best_match_idx].values,
+            "Page Value Score": page_value.values,
+            "Recommendation":   [migration_rec(s) for s in max_sim],
+        }
 
-            for col, label in [
-                ("Word Count",        "SF Word Count"),
-                ("Inlinks",           "SF Inlinks"),
-                ("Unique Inlinks",    "SF Unique Inlinks"),
-                ("Crawl Depth 1",     "SF Crawl Depth"),
-                ("Readability",       "SF Readability"),
-                ("_inlink_count",     "Inlinks (from inlinks export)"),
-                ("_anchor_string",    "Anchor Texts"),
-                ("_src_title_string", "Source Page Titles"),
-            ]:
-                if col in df.columns:
-                    result_cols[label] = df[col].values
+        for col, label in [
+            ("Word Count",        "SF Word Count"),
+            ("Inlinks",           "SF Inlinks"),
+            ("Unique Inlinks",    "SF Unique Inlinks"),
+            ("Crawl Depth 1",     "SF Crawl Depth"),
+            ("Readability",       "SF Readability"),
+            ("_inlink_count",     "Inlinks (from inlinks export)"),
+            ("_anchor_string",    "Anchor Texts"),
+            ("_src_title_string", "Source Page Titles"),
+        ]:
+            if col in df.columns:
+                result_cols[label] = df[col].values
 
-            results = pd.DataFrame(result_cols)
-            st.session_state["audit_results"] = results
+        results = pd.DataFrame(result_cols)
+        st.session_state["audit_results"] = results
 
-            st.success(f"Done. {len(results)} pages analysed.")
+        st.success(f"Done. {len(results)} pages analysed.")
 
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Migrate",           len(results[results["Recommendation"] == "Migrate"]))
-            m2.metric("Review overlap",    len(results[results["Recommendation"] == "Review overlap"]))
-            m3.metric("Consolidate / 301", len(results[results["Recommendation"] == "Consolidate / 301"]))
-            m4.metric("Avg Page Value",    f"{results['Page Value Score'].mean():.1f}")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Migrate",           len(results[results["Recommendation"] == "Migrate"]))
+        m2.metric("Review overlap",    len(results[results["Recommendation"] == "Review overlap"]))
+        m3.metric("Consolidate / 301", len(results[results["Recommendation"] == "Consolidate / 301"]))
+        m4.metric("Avg Page Value",    f"{results['Page Value Score'].mean():.1f}")
 
-            st.dataframe(
-                results.sort_values("Page Value Score", ascending=False),
-                use_container_width=True
-            )
+        st.dataframe(
+            results.sort_values("Page Value Score", ascending=False),
+            use_container_width=True
+        )
 
-            st.download_button(
-                "Download Results CSV",
-                data=results.to_csv(index=False),
-                file_name="uniqueness_audit.csv",
-                mime="text/csv",
-            )
+        st.download_button(
+            "Download Results CSV",
+            data=results.to_csv(index=False),
+            file_name="uniqueness_audit.csv",
+            mime="text/csv",
+        )
 
-# ── TAB 2: REDIRECT MAPPING ───────────────────────────────────────────────────
-
-with tab2:
-    st.subheader("Redirect Mapping")
-    st.markdown("Cross-site analysis. Maps each old URL to its best semantic match on the new site.")
-
-    expander_sf_columns()
-    expander_inlinks()
-
-    with st.expander("Inlinks for redirect mapping"):
-        st.markdown("""
-Upload the **old site** inlinks export. This enriches the old URL embeddings with anchor context.
-
-The new site inlinks export is optional — useful if the new site is already partially built and crawled.
-        """)
-
-    left, right = st.columns(2)
-    old_sf = left.file_uploader("Old Site SF CSV (required)",  type="csv", key="old_sf")
-    new_sf = right.file_uploader("New Site SF CSV (required)", type="csv", key="new_sf")
-    old_il = left.file_uploader("Old Site Inlinks CSV (optional)", type="csv", key="old_il")
-    new_il = right.file_uploader("New Site Inlinks CSV (optional)", type="csv", key="new_il")
-
-    top_n         = st.slider("Top N matches per URL", 1, 5, 3, key="topn2")
-    sim_threshold = st.slider("Minimum similarity score", 0.0, 1.0, 0.0, 0.05, key="thresh2")
-
-    if old_sf and new_sf:
-        df_old = filter_df(pd.read_csv(old_sf))
-        df_new = filter_df(pd.read_csv(new_sf))
-
-        o1, o2 = st.columns(2)
-        o1.metric("Old site pages (filtered)", len(df_old))
-        o2.metric("New site pages (filtered)", len(df_new))
-
-        if len(df_old) == 0 or len(df_new) == 0:
-            st.error("One or both exports returned no pages after filtering.")
-            st.stop()
-
-        sources = ["SF metadata"]
-
-        if old_il:
-            df_old = merge_inlinks(df_old, pd.read_csv(old_il, low_memory=False))
-            sources.append("Old site inlinks")
-        if new_il:
-            df_new = merge_inlinks(df_new, pd.read_csv(new_il, low_memory=False))
-            sources.append("New site inlinks")
-
-        st.info(f"Active sources: {', '.join(sources)}")
-
-        df_old["Composite Text"] = df_old.apply(build_composite, axis=1)
-        df_new["Composite Text"] = df_new.apply(build_composite, axis=1)
-
-        if st.button("Run Redirect Mapping", type="primary", key="run2"):
-            emb_old = get_embeddings(model, df_old["Composite Text"].tolist())
-            emb_new = get_embeddings(model, df_new["Composite Text"].tolist())
-
-            with st.spinner("Calculating cross-site similarity..."):
-                sim  = cosine_similarity(emb_old, emb_new)
-                rows = []
-                for i in range(len(df_old)):
-                    scores  = sim[i]
-                    top_idx = scores.argsort()[::-1][:top_n]
-                    for rank, j in enumerate(top_idx, 1):
-                        score = float(scores[j])
-                        if score < sim_threshold:
-                            continue
-                        row = {
-                            "Old URL":          df_old["Address"].iloc[i],
-                            "Old Title":        df_old["Title 1"].iloc[i] if "Title 1" in df_old.columns else "",
-                            "Old Composite":    df_old["Composite Text"].iloc[i],
-                            "Match Rank":       rank,
-                            "New URL":          df_new["Address"].iloc[j],
-                            "New Title":        df_new["Title 1"].iloc[j] if "Title 1" in df_new.columns else "",
-                            "New Composite":    df_new["Composite Text"].iloc[j],
-                            "Similarity Score": round(score, 4),
-                            "Confidence":       confidence_label(score),
-                        }
-                        for col, label in [
-                            ("Word Count",        "Old SF Word Count"),
-                            ("Inlinks",           "Old SF Inlinks"),
-                            ("Crawl Depth 1",     "Old SF Crawl Depth"),
-                            ("_inlink_count",     "Old Inlinks (inlinks export)"),
-                            ("_anchor_string",    "Old Anchor Texts"),
-                        ]:
-                            if col in df_old.columns:
-                                row[label] = df_old[col].iloc[i]
-                        rows.append(row)
-
-                results = pd.DataFrame(rows)
-                st.session_state["redirect_results"] = results
-
-            st.success(f"Done. {len(df_old)} old URLs mapped against {len(df_new)} new pages.")
-
-            top1 = results[results["Match Rank"] == 1]
-            c1, c2, c3 = st.columns(3)
-            c1.metric("High confidence",   len(top1[top1["Confidence"] == "High"]))
-            c2.metric("Medium confidence", len(top1[top1["Confidence"] == "Medium"]))
-            c3.metric("Low confidence",    len(top1[top1["Confidence"] == "Low"]))
-
-            sort_col = "Old SF Inlinks" if "Old SF Inlinks" in results.columns else "Similarity Score"
-            st.dataframe(
-                results.sort_values(sort_col, ascending=False),
-                use_container_width=True
-            )
-
-            st.download_button(
-                "Download Redirect Map CSV",
-                data=results.to_csv(index=False),
-                file_name="redirect_mapping.csv",
-                mime="text/csv",
-            )
-
-# ── TAB 3: AI MIGRATION REPORT ────────────────────────────────────────────────
-
-with tab3:
-    st.subheader("AI Migration Report")
-    st.markdown(
-        "Generates a written migration analysis from your audit or redirect mapping results. "
-        "Run Tab 1 or Tab 2 first, then generate here."
-    )
-
-    site_name = st.text_input(
-        "Site name or domain",
-        placeholder="e.g. gosemo.com"
-    )
-
-    mode = st.radio(
-        "Report on:",
-        ["Uniqueness Audit (Tab 1)", "Redirect Mapping (Tab 2)"],
-        horizontal=True
-    )
-
-    has_audit    = "audit_results"    in st.session_state
-    has_redirect = "redirect_results" in st.session_state
-
-    if mode == "Uniqueness Audit (Tab 1)" and not has_audit:
-        st.warning("No audit results found. Run the Uniqueness Audit in Tab 1 first.")
-    elif mode == "Redirect Mapping (Tab 2)" and not has_redirect:
-        st.warning("No redirect mapping results found. Run Redirect Mapping in Tab 2 first.")
-    else:
-        results    = st.session_state["audit_results"] if "Audit" in mode else st.session_state["redirect_results"]
-        mode_label = "Uniqueness Audit" if "Audit" in mode else "Redirect Mapping"
-
-        st.info(f"Ready: {len(results)} rows from {mode_label}.")
-
-        if st.button("Generate AI Report", type="primary", key="run3"):
-            with st.spinner("Generating report..."):
-                prompt = build_report_prompt(results, mode_label, site_name)
-                report = call_claude(prompt)
-
-            st.markdown("---")
-            st.markdown(report)
-            st.markdown("---")
-
-            st.download_button(
-                "Download Report as TXT",
-                data=report,
-                file_name=f"migration_report_{(site_name or 'site').replace('.', '_')}.txt",
-                mime="text/plain",
-            )
