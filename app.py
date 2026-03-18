@@ -12,32 +12,32 @@ from bs4 import BeautifulSoup
 
 st.set_page_config(
     page_title="SF Semantic Analyzer",
-    page_icon="🔍",
+    page_icon="SF",
     layout="wide"
 )
 
 # ── Model registry ─────────────────────────────────────────────────────────────
 
 MODELS = {
-    "all-MiniLM-L6-v2 — Fast (default)": {
+    "all-MiniLM-L6-v2 - Fast (default)": {
         "id":   "all-MiniLM-L6-v2",
         "dims": 384,
         "type": "local",
         "note": "Best for quick audits. Good general accuracy.",
     },
-    "all-mpnet-base-v2 — Balanced": {
+    "all-mpnet-base-v2 - Balanced": {
         "id":   "all-mpnet-base-v2",
         "dims": 768,
         "type": "local",
         "note": "2x the vector dimensions. Better at distinguishing near-similar pages. Recommended for most migrations.",
     },
-    "mxbai-embed-large-v1 — Best local quality": {
+    "mxbai-embed-large-v1 - Best local quality": {
         "id":   "mixedbread-ai/mxbai-embed-large-v1",
         "dims": 1024,
         "type": "local",
         "note": "Highest local accuracy. Slower on large crawls. Best for sites with thin metadata.",
     },
-    "text-embedding-3-small — OpenAI (API key required)": {
+    "text-embedding-3-small - OpenAI (API key required)": {
         "id":   "text-embedding-3-small",
         "dims": 1536,
         "type": "openai",
@@ -305,7 +305,7 @@ model_label = st.selectbox(
     index=0,
 )
 model_cfg = MODELS[model_label]
-st.caption(f"Dimensions: {model_cfg['dims']} — {model_cfg['note']}")
+st.caption(f"Dimensions: {model_cfg['dims']} | {model_cfg['note']}")
 
 openai_key = None
 if model_cfg["type"] == "openai":
@@ -329,7 +329,7 @@ st.markdown(
 
 scrape_mode = st.radio(
     "Scraping method",
-    ["Off — use SF export only", "Native HTTP — free, no JS rendering", "Firecrawl — JS rendering, cleaner extraction (API key required)"],
+    ["Off - use SF export only", "Native HTTP - free, no JS rendering", "Firecrawl - JS rendering, cleaner extraction (API key required)"],
     index=0,
     horizontal=True,
 )
@@ -338,7 +338,7 @@ firecrawl_key  = None
 scrape_workers = 5
 scrape_delay   = 0.5
 
-if scrape_mode != "Off — use SF export only":
+if scrape_mode != "Off - use SF export only":
     col1, col2 = st.columns(2)
     scrape_workers = col1.slider("Concurrent requests", 1, 10, 5,
         help="Higher = faster but more load on the target server. Keep at 3-5 for client sites.")
@@ -363,28 +363,28 @@ st.divider()
 
 st.subheader("Uniqueness Audit")
 
-with st.expander("SF Internal HTML — columns used"):
+with st.expander("SF Internal HTML - columns used"):
     st.markdown("""
 **Required:** `Address`, `Status Code`, `Indexability`
 
 **Embedded:** `Title 1`, `H1-1`, `H2-1`, `H2-2`, `H3-1`, `Meta Description 1`, `Meta Keywords 1`
 
-**Body text (SF Custom Extraction):** `Custom Extraction 1/2/3` — if present, body scraping above is redundant.
+**Body text (SF Custom Extraction):** `Custom Extraction 1/2/3` - if present, body scraping above is redundant.
 
 **Scoring signals (not embedded):** `Word Count`, `Inlinks`, `Unique Inlinks`, `Crawl Depth 1`, `Readability`
     """)
 
-with st.expander("SF All Inlinks export (optional but recommended)"):
+with st.expander("SF All Inlinks export (required)"):
     st.markdown("""
 **How to export:** Bulk Exports > All Inlinks > CSV
 
 **Columns used:** `Destination`, `Anchor Text`, `Source Title`, `Type`
 
-Aggregates top 8 anchor texts and top 5 source page titles per URL. Strong proxy for body content signal on pages with thin metadata.
+Required because anchor text from inlinking pages is the strongest semantic signal SF can provide. Without it, pages that share the same title and H1 template look identical to the model even if they cover completely different content. The app aggregates top 8 anchor texts and top 5 source page titles per URL and appends them to the composite.
     """)
 
 sf_file = st.file_uploader("Screaming Frog Internal HTML CSV (required)", type="csv", key="sf1")
-il_file = st.file_uploader("SF All Inlinks CSV (optional)", type="csv", key="il1")
+il_file = st.file_uploader("SF All Inlinks CSV (required)", type="csv", key="il1")
 
 if sf_file:
     raw = pd.read_csv(sf_file)
@@ -398,20 +398,26 @@ if sf_file:
         st.error("No pages remain after filtering. Check Status Code and Indexability columns.")
         st.stop()
 
+    if not il_file:
+        st.error(
+            "All Inlinks CSV is required. Export it from Screaming Frog via "
+            "Bulk Exports > All Inlinks > CSV and upload it above."
+        )
+        st.stop()
+
     sources = ["SF metadata"]
-    if il_file:
-        inlinks_df = pd.read_csv(il_file, low_memory=False)
-        df = merge_inlinks(df, inlinks_df)
-        sources.append("SF inlinks")
+    inlinks_df = pd.read_csv(il_file, low_memory=False)
+    df = merge_inlinks(df, inlinks_df)
+    sources.append("SF inlinks")
 
     # ── Body scraping step ─────────────────────────────────────────────────────
     body_col_exists = any(c in df.columns for c in SF_BODY_COLS)
-    run_scrape = scrape_mode != "Off — use SF export only"
+    run_scrape = scrape_mode != "Off - use SF export only"
 
     if run_scrape and body_col_exists:
         st.warning(
             "SF export already contains body text columns (Custom Extraction). "
-            "Scraping is redundant — disable it or remove the extraction columns to avoid duplicate signal."
+            "Scraping is redundant. Disable it or remove the extraction columns to avoid duplicate signal."
         )
         run_scrape = False
 
@@ -463,7 +469,7 @@ if sf_file:
     if has_scraped:  col_info += ", scraped body text"
     if has_anchors:  col_info += ", anchor texts, source titles"
     if found_score:  col_info += f" | Scoring: {', '.join(found_score)}"
-    st.caption(f"Columns detected — {col_info}")
+    st.caption(f"Columns detected: {col_info}")
 
     df["Composite Text"] = df.apply(build_composite, axis=1)
 
