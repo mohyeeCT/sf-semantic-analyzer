@@ -294,7 +294,6 @@ def scrape_urls(urls: list, method: str, firecrawl_key: str = None,
 # ── UI ─────────────────────────────────────────────────────────────────────────
 
 st.title("SF Semantic Analyzer")
-st.caption("Screaming Frog · Semantic embeddings · Page value · Migration audit")
 
 # ── Model selector ─────────────────────────────────────────────────────────────
 
